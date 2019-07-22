@@ -11,7 +11,7 @@ import { exchangeRateChannel, formatUsdValue } from '../lib/currency'
 import { createStore, connectElements } from '../lib/redux_helpers.js'
 import { batchChannel } from '../lib/utils'
 import listMorph from '../lib/list_morph'
-import { createMarketHistoryChart } from '../lib/market_history_chart'
+import { createMarketHistoryChart } from '../lib/history_chart'
 
 const BATCH_THRESHOLD = 6
 
@@ -107,6 +107,11 @@ function baseReducer (state = initialState, action) {
         })
       }
     }
+    case 'RECIEVED_UPDATED_TRANSACTION_STATS':{
+      return Object.assign({}, state, {
+        transactionStats: action.msg.stats,
+      })
+    }
     case 'START_TRANSACTIONS_FETCH':
       return Object.assign({}, state, { transactionsError: false, transactionsLoading: true })
     case 'TRANSACTIONS_FETCHED':
@@ -141,13 +146,17 @@ function withMissingBlocks (reducer) {
 
 let chart
 const elements = {
-  '[data-chart="marketHistoryChart"]': {
+  '[data-chart="historyChart"]': {
     load ($el) {
       chart = createMarketHistoryChart($el[0])
     },
     render ($el, state, oldState) {
-      if (!chart || (oldState.availableSupply === state.availableSupply && oldState.marketHistoryData === state.marketHistoryData) || !state.availableSupply) return
-      chart.update(state.availableSupply, state.marketHistoryData)
+      if (chart && !(oldState.availableSupply === state.availableSupply && oldState.marketHistoryData === state.marketHistoryData) && state.availableSupply) {
+        chart.updateMarketHistory(state.availableSupply, state.marketHistoryData)
+      }
+      if (chart && !(_.isEqual(oldState.transactionStats, state.transactionStats))){ 
+        chart.updateTransactionHistory(state.transactionStats)
+      }
     }
   },
   '[data-selector="transaction-count"]': {
@@ -288,6 +297,13 @@ if ($chainDetailsPage.length) {
     type: 'RECEIVED_NEW_TRANSACTION_BATCH',
     msgs: humps.camelizeKeys(msgs)
   })))
+
+  const transactionStatsChannel = socket.channel('transactions:stats')
+  transactionStatsChannel.join()
+  transactionStatsChannel.on('update', msg => store.dispatch({
+    type: 'RECIEVED_UPDATED_TRANSACTION_STATS',
+    msg: msg
+  }))
 }
 
 function loadTransactions (store) {
